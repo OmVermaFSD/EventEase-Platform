@@ -1,21 +1,20 @@
 package com.eventease.backend.config;
 
 import io.github.cdimascio.dotenv.Dotenv;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@Configuration
-public class DotenvConfig {
+public class DotenvConfig implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
     private static final String[] REQUIRED_ENV_VARS = {"DB_USERNAME", "DB_PASSWORD"};
 
-    static {
-        // Load environment variables at class loading time, before Spring context initialization
+    @Override
+    public void initialize(ConfigurableApplicationContext applicationContext) {
         try {
             Dotenv dotenv = Dotenv.configure()
                     .ignoreIfMissing()
@@ -35,22 +34,17 @@ public class DotenvConfig {
                 }
             }
 
-            // Set system properties for Spring to pick up
-            dotenv.entries().forEach(entry -> {
-                if (System.getProperty(entry.getKey()) == null) {
-                    System.setProperty(entry.getKey(), entry.getValue());
-                }
-            });
+            // Add .env variables to Spring Environment before property resolution
+            ConfigurableEnvironment environment = applicationContext.getEnvironment();
+            Map<String, Object> envVars = new HashMap<>();
+            dotenv.entries().forEach(entry -> envVars.put(entry.getKey(), entry.getValue()));
+
+            environment.getPropertySources().addFirst(
+                new MapPropertySource("dotenv", envVars)
+            );
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to load environment configuration: " + e.getMessage(), e);
         }
-    }
-
-    @Bean
-    public Dotenv dotenv() {
-        return Dotenv.configure()
-                .ignoreIfMissing()
-                .load();
     }
 }
