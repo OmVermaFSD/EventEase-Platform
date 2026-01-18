@@ -1,48 +1,62 @@
 package com.eventease;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import java.time.LocalDateTime;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "seats")
-@Data
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
-@EntityListeners(AuditingEntityListener.class)
 public class Seat {
-    
+
     @Id
-    private String id;
-    
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private SeatStatus status;
-    
-    @Column(name = "user_id")
-    private String userId;
-    
-    @Version  // CRITICAL: Optimistic Locking
+    private Long id;
+
+    private String seatNumber;
+
+    private boolean isSold;
+
+    @Version
     private Long version;
-    
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @LastModifiedDate
-    @Column(name = "last_updated")
-    private LocalDateTime lastUpdated;
-    
-    public enum SeatStatus {
-        AVAILABLE,
-        SOLD
+
+    public Seat() {
+    }
+
+    public Seat(Long id, String seatNumber, boolean isSold) {
+        this.id = id;
+        this.seatNumber = seatNumber;
+        this.isSold = isSold;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getSeatNumber() {
+        return seatNumber;
+    }
+
+    public void setSeatNumber(String seatNumber) {
+        this.seatNumber = seatNumber;
+    }
+
+    public boolean isSold() {
+        return isSold;
+    }
+
+    public void setSold(boolean sold) {
+        isSold = sold;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 }

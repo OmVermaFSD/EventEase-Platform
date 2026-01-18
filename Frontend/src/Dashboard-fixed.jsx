@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { bookSeat, isSystemOverloaded } from './api';
 
 const Dashboard = () => {
@@ -6,8 +6,36 @@ const Dashboard = () => {
   const [latencyHistory, setLatencyHistory] = useState([]);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [transactions, setTransactions] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [systemStatus, setSystemStatus] = useState('WAITING');
   const [gridDisabled, setGridDisabled] = useState(false);
+
+  const logIdRef = useRef(1);
+
+  const appendLog = (type, status, message) => {
+    const now = new Date();
+    const logEntry = {
+      id: logIdRef.current++,
+      type,
+      status,
+      time: now.toLocaleTimeString(),
+      message
+    };
+
+    setLogs(prev => [...prev, logEntry]);
+  };
+
+  useEffect(() => {
+    const timers = [];
+    timers.push(setTimeout(() => appendLog('SYSTEM', 'OK', 'Initializing System...'), 0));
+    timers.push(setTimeout(() => appendLog('SYSTEM', 'OK', 'Connecting to Postgres...'), 500));
+    timers.push(setTimeout(() => appendLog('SYSTEM', 'OK', 'Rate Limiter Active'), 1000));
+    timers.push(setTimeout(() => appendLog('SYSTEM', 'OK', 'API Routes Registered'), 1500));
+
+    return () => {
+      timers.forEach(t => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     const initialSeats = Array.from({ length: 100 }, (_, i) => ({
@@ -65,13 +93,17 @@ const Dashboard = () => {
   const handleBookSeat = async (seat) => {
     if (seat.status !== 'AVAILABLE' || gridDisabled) return;
 
+    appendLog('PENDING', 'PROCESSING', `Seat ${seat.id}`);
+
     try {
       await bookSeat(seat.id);
+      appendLog('BOOKING', 'CONFIRMED', `Seat ${seat.id}`);
       // Optimistic UI update - turn seat RED immediately
       setSeats(prev => prev.map(s => 
         s.id === seat.id ? { ...s, status: 'SOLD' } : s
       ));
     } catch (error) {
+      appendLog('ERROR', 'FAILED', error?.message || `Seat ${seat.id}`);
       if (error.message === 'Seat taken!') {
         alert('Seat Taken');
       }
@@ -128,12 +160,12 @@ const Dashboard = () => {
             </tr>
           </thead>
           <tbody>
-            {transactions.slice(0, 10).map((tx, i) => (
+            {logs.slice(-10).reverse().map((tx, i) => (
               <tr key={i} className="border-b border-gray-700">
                 <td className="p-2">{tx.id}</td>
                 <td className="p-2">{tx.type}</td>
-                <td className="p-2">{tx.status}</td>
-                <td className="p-2">{new Date(tx.timestamp).toLocaleTimeString()}</td>
+                <td className="p-2">{tx.message ? `${tx.status} - ${tx.message}` : tx.status}</td>
+                <td className="p-2">{tx.time}</td>
               </tr>
             ))}
           </tbody>

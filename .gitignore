@@ -1,0 +1,13 @@
+# Ignore Dependencies
+**/node_modules/
+**/target/
+**/.mvn/
+**/.idea/
+**/.vscode/
+**/dist/
+**/build/
+*.log
+
+# Ignore OS files
+.DS_Store
+Thumbs.db

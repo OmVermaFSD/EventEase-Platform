@@ -1,224 +1,187 @@
 import React, { useState, useEffect } from 'react';
-import api, { isSystemOverloaded } from './api';
+import { fetchSeats, bookSeat } from './api';
 
-/**
- * EventEase Flash Sale Terminal - Mission Control UI
- * 
- * Features:
- * - 10x10 Seat Grid with real-time updates
- * - Real-Time Latency Graph (SVG)
- * - Admin Mode toggle with transaction table
- */
+export default function Dashboard() {
+    const [seats, setSeats] = useState([]);
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedSeat, setSelectedSeat] = useState(null); // The seat being booked
+    const [bookingStage, setBookingStage] = useState('idle'); // idle | form | processing | success
+    const [customerName, setCustomerName] = useState('');
 
-const Dashboard = () => {
-  const [seats, setSeats] = useState([]);
-  const [latencyHistory, setLatencyHistory] = useState([]);
-  const [isAdminMode, setIsAdminMode] = useState(false);
-  const [transactions, setTransactions] = useState([]);
-  const [systemStatus, setSystemStatus] = useState('WAITING');
-
-  // Initialize seats grid
-  useEffect(() => {
-    const initialSeats = Array.from({ length: 100 }, (_, i) => ({
-      id: i + 1,
-      status: 'AVAILABLE' // AVAILABLE, SOLD, LOCKED
-    }));
-    setSeats(initialSeats);
-  }, []);
-
-  // Poll for seat updates
-  useEffect(() => {
-    const pollSeats = async () => {
-      try {
-        const response = await api.get('/seats');
-        setSeats(response.data);
-      } catch (error) {
-        console.error('Failed to poll seats:', error);
-      }
+    const addLog = (type, status) => {
+        const time = new Date().toLocaleTimeString();
+        setLogs(prev => [{ id: Date.now(), type, status, time }, ...prev].slice(0, 10));
     };
 
-    pollSeats();
-    const interval = setInterval(pollSeats, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    useEffect(() => {
+        addLog("SYSTEM", "Booting Payment Gateway...");
+        loadSeats();
+    }, []);
 
-  // Poll for system status and latency
-  useEffect(() => {
-    const pollSystem = async () => {
-      try {
-        const response = await api.get('/system/status');
-        setSystemStatus(response.data.status);
-        
-        // Update latency history
-        if (response.data.latency) {
-          setLatencyHistory(prev => [...prev.slice(-19), response.data.latency]);
+    const loadSeats = async () => {
+        try {
+            const data = await fetchSeats();
+            setSeats(data || []);
+            setLoading(false);
+        } catch (e) {
+            addLog("ERROR", "Connection Failed");
+            setLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to poll system:', error);
-      }
     };
 
-    pollSystem();
-    const interval = setInterval(pollSystem, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    // Step 1: User Clicks a Seat
+    const handleSeatClick = (seat) => {
+        if (seat.sold) return;
+        setSelectedSeat(seat);
+        setBookingStage('form');
+        addLog("USER", `Selected Seat ${seat.seatNumber}`);
+    };
 
-  // Handle seat selection
-  const handleSeatClick = async (seat) => {
-    if (seat.status !== 'AVAILABLE' || isSystemOverloaded) return;
+    // Step 2: User Submits Payment
+    const handlePayment = async (e) => {
+        e.preventDefault();
+        setBookingStage('processing');
+        addLog("PAYMENT", "Initiating Secure Transaction...");
 
-    try {
-      await api.post(`/seats/${seat.id}/lock`);
-      // Update local state immediately
-      setSeats(prev => prev.map(s => 
-        s.id === seat.id ? { ...s, status: 'LOCKED' } : s
-      ));
-    } catch (error) {
-      if (error.message === 'Seat taken!') {
-        alert('Seat taken!');
-      }
-    }
-  };
+        // Simulate Real World Delays
+        setTimeout(() => addLog("BANK", "Contacting Visa/Mastercard..."), 1000);
+        setTimeout(() => addLog("BANK", "Verifying Funds..."), 2000);
+        
+        setTimeout(async () => {
+            try {
+                await bookSeat(selectedSeat.id);
+                addLog("SUCCESS", "Payment Approved. Transaction ID: TXN-" + Date.now());
+                setBookingStage('success');
+                loadSeats(); // Refresh grid
+            } catch (error) {
+                addLog("ERROR", "Payment Declined");
+                setBookingStage('idle');
+                setSelectedSeat(null);
+            }
+        }, 3500); // 3.5 second fake delay
+    };
 
-  // Get seat color
-  const getSeatColor = (status) => {
-    switch (status) {
-      case 'AVAILABLE': return '#00ff41';
-      case 'SOLD': return '#ff3b30';
-      case 'LOCKED': return '#f59e0b';
-      default: return '#666';
-    }
-  };
+    const closeReceipt = () => {
+        setSelectedSeat(null);
+        setBookingStage('idle');
+        setCustomerName('');
+    };
 
-  // Render latency graph
-  const renderLatencyGraph = () => {
-    const maxLatency = Math.max(...latencyHistory, 100);
-    const width = 300;
-    const height = 100;
-    const barWidth = width / Math.max(latencyHistory.length, 1);
+    if (loading) return <div className="p-10 bg-black text-green-500 font-mono">INITIALIZING...</div>;
 
     return (
-      <svg width={width} height={height} className="border border-gray-600 bg-black/50">
-        {latencyHistory.map((latency, i) => (
-          <rect
-            key={i}
-            x={i * barWidth}
-            y={height - (latency / maxLatency) * height}
-            width={barWidth - 1}
-            height={(latency / maxLatency) * height}
-            fill="#00ff41"
-            opacity="0.8"
-          />
-        ))}
-      </svg>
+        <div className="min-h-screen bg-black text-green-500 font-mono p-8 relative">
+            <div className="max-w-6xl mx-auto flex gap-8">
+                
+                {/* LEFT: SEAT MAP */}
+                <div className="flex-1">
+                    <h1 className="text-3xl font-bold mb-6 border-b border-green-700 pb-2">EVENT_EASE TERMINAL</h1>
+                    <div className="grid grid-cols-10 gap-3">
+                        {seats.map(seat => (
+                            <button
+                                key={seat.id}
+                                disabled={seat.sold}
+                                onClick={() => handleSeatClick(seat)}
+                                className={`w-12 h-12 flex items-center justify-center text-xs font-bold rounded transition-all
+                                    ${seat.sold 
+                                        ? 'bg-red-900 text-red-300 cursor-not-allowed border border-red-700' 
+                                        : 'bg-gray-900 text-green-400 hover:bg-green-700 hover:text-black border border-green-800'
+                                    }`}
+                            >
+                                {seat.seatNumber}
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="mt-6 flex gap-4 text-sm">
+                        <div className="flex items-center"><div className="w-3 h-3 bg-gray-900 border border-green-800 mr-2"></div> Available ($150)</div>
+                        <div className="flex items-center"><div className="w-3 h-3 bg-red-900 border border-red-700 mr-2"></div> Sold Out</div>
+                    </div>
+                </div>
+
+                {/* RIGHT: LIVE LOGS */}
+                <div className="w-96 border border-green-800 bg-black p-4 h-[600px] overflow-hidden flex flex-col">
+                    <h2 className="text-xl font-bold mb-4 border-b border-green-800 pb-2">TRANSACTION LOG</h2>
+                    <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs">
+                        {logs.map(log => (
+                            <div key={log.id} className="border-l-2 border-green-700 pl-2">
+                                <span className="opacity-50">[{log.time}]</span> 
+                                <span className={`font-bold ml-2 ${log.type === 'ERROR' ? 'text-red-500' : 'text-green-400'}`}>
+                                    {log.type}
+                                </span>
+                                <div className="opacity-80">{log.status}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* MODAL: PAYMENT FORM */}
+            {selectedSeat && bookingStage === 'form' && (
+                <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-50">
+                    <div className="bg-gray-900 border border-green-500 p-8 w-96 shadow-[0_0_50px_rgba(34,197,94,0.2)]">
+                        <h2 className="text-2xl font-bold text-white mb-4">CONFIRM BOOKING</h2>
+                        <div className="mb-4 text-green-400">Seat: {selectedSeat.seatNumber} <span className="float-right text-white">$150.00</span></div>
+                        
+                        <form onSubmit={handlePayment}>
+                            <div className="mb-4">
+                                <label className="block text-xs mb-1">CUSTOMER NAME</label>
+                                <input 
+                                    required
+                                    type="text" 
+                                    className="w-full bg-black border border-green-700 p-2 text-white focus:outline-none focus:border-green-400"
+                                    placeholder="JOHN DOE"
+                                    value={customerName}
+                                    onChange={(e) => setCustomerName(e.target.value)}
+                                />
+                            </div>
+                            <div className="mb-6">
+                                <label className="block text-xs mb-1">CARD NUMBER (FAKE)</label>
+                                <input 
+                                    required
+                                    type="text" 
+                                    className="w-full bg-black border border-green-700 p-2 text-white focus:outline-none focus:border-green-400"
+                                    placeholder="0000 0000 0000 0000"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={closeReceipt} className="flex-1 border border-red-500 text-red-500 py-2 hover:bg-red-900/20">CANCEL</button>
+                                <button type="submit" className="flex-1 bg-green-600 text-black font-bold py-2 hover:bg-green-500">PAY $150</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL: PROCESSING */}
+            {bookingStage === 'processing' && (
+                <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-50">
+                    <div className="animate-spin w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full mb-4"></div>
+                    <div className="text-xl animate-pulse">PROCESSING SECURE PAYMENT...</div>
+                    <div className="text-sm opacity-50 mt-2">DO NOT CLOSE THIS WINDOW</div>
+                </div>
+            )}
+
+            {/* MODAL: RECEIPT */}
+            {bookingStage === 'success' && (
+                <div className="absolute inset-0 bg-black/95 flex items-center justify-center z-50">
+                    <div className="bg-white text-black p-8 w-96 text-center">
+                        <div className="text-4xl mb-2">✅</div>
+                        <h2 className="text-2xl font-bold mb-4">BOOKING CONFIRMED</h2>
+                        <div className="border-t border-b border-black py-4 mb-4 text-left font-mono text-sm">
+                            <div className="flex justify-between"><span>SEAT:</span> <b>{selectedSeat.seatNumber}</b></div>
+                            <div className="flex justify-between"><span>CUSTOMER:</span> <b>{customerName.toUpperCase()}</b></div>
+                            <div className="flex justify-between"><span>AMOUNT:</span> <b>$150.00</b></div>
+                            <div className="flex justify-between"><span>STATUS:</span> <b>PAID</b></div>
+                        </div>
+                        <div className="bg-black text-white p-4 font-mono text-xs mb-4">
+                            FAKE-QR-CODE-88237-XYZ
+                        </div>
+                        <button onClick={closeReceipt} className="w-full bg-black text-white py-3 font-bold hover:bg-gray-800">DOWNLOAD TICKET</button>
+                    </div>
+                </div>
+            )}
+        </div>
     );
-  };
-
-  // Render admin transaction table
-  const renderAdminTable = () => (
-    <div className="bg-black/50 border border-gray-600 rounded p-4">
-      <h3 className="text-green-400 font-bold mb-4">TRANSACTION LOG</h3>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs text-green-400">
-          <thead>
-            <tr className="border-b border-gray-600">
-              <th className="text-left p-2">ID</th>
-              <th className="text-left p-2">TYPE</th>
-              <th className="text-left p-2">STATUS</th>
-              <th className="text-left p-2">TIME</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.slice(0, 10).map((tx, i) => (
-              <tr key={i} className="border-b border-gray-700">
-                <td className="p-2">{tx.id}</td>
-                <td className="p-2">{tx.type}</td>
-                <td className="p-2">{tx.status}</td>
-                <td className="p-2">{new Date(tx.timestamp).toLocaleTimeString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-black text-green-400 p-6 font-mono">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-green-400 mb-2">EVENTEASE TERMINAL</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-sm">STATUS: {systemStatus}</span>
-          {isSystemOverloaded && (
-            <span className="text-red-400 text-sm animate-pulse">SYSTEM OVERLOADED</span>
-          )}
-        </div>
-      </div>
-
-      {/* Admin Toggle */}
-      <div className="mb-6">
-        <button
-          onClick={() => setIsAdminMode(!isAdminMode)}
-          className="px-4 py-2 bg-green-400 text-black font-bold rounded hover:bg-green-300 transition-colors"
-        >
-          {isAdminMode ? 'USER MODE' : 'ADMIN MODE'}
-        </button>
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Seat Grid */}
-        <div className="lg:col-span-2">
-          <div className="bg-black/50 border border-gray-600 rounded p-4">
-            <h2 className="text-green-400 font-bold mb-4">SEAT MAP</h2>
-            <div className="grid grid-cols-10 gap-1 mb-4">
-              {seats.map((seat) => (
-                <button
-                  key={seat.id}
-                  onClick={() => handleSeatClick(seat)}
-                  disabled={seat.status !== 'AVAILABLE' || isSystemOverloaded}
-                  className="aspect-square rounded border border-gray-600 flex items-center justify-center text-xs hover:border-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: getSeatColor(seat.status) }}
-                >
-                  {seat.id}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-4 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#00ff41' }}></div>
-                <span>Available</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#f59e0b' }}></div>
-                <span>Locked</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded" style={{ backgroundColor: '#ff3b30' }}></div>
-                <span>Sold</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Side Panel */}
-        <div className="space-y-6">
-          {/* Latency Graph */}
-          <div className="bg-black/50 border border-gray-600 rounded p-4">
-            <h2 className="text-green-400 font-bold mb-4">LATENCY (ms)</h2>
-            {renderLatencyGraph()}
-            <div className="text-xs mt-2">
-              Current: {latencyHistory[latencyHistory.length - 1] || 0}ms
-            </div>
-          </div>
-
-          {/* Admin Panel */}
-          {isAdminMode && renderAdminTable()}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default Dashboard;
+}

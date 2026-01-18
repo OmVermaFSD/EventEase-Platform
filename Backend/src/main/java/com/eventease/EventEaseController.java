@@ -1,45 +1,35 @@
 package com.eventease;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import java.util.List;
 
 @RestController
-@RequestMapping("/api")
-@RequiredArgsConstructor
-@Slf4j
+@RequestMapping("/api/seats")
 public class EventEaseController {
 
     private final BookingService bookingService;
 
-    @GetMapping("/seats")
-    public ResponseEntity<java.util.List<Seat>> getAllSeats() {
-        return ResponseEntity.ok(bookingService.getSeatMap());
+    public EventEaseController(BookingService bookingService) {
+        this.bookingService = bookingService;
     }
 
-    @PostMapping("/book/{seatId}")
-    public ResponseEntity<?> bookSeat(@PathVariable String seatId, @RequestParam String userId) {
+    @GetMapping({"/", ""})
+    public List<Seat> getAllSeats() {
+        return bookingService.getAllSeats();
+    }
+
+    @PostMapping("/book/{id}")
+    public ResponseEntity<?> bookSeat(@PathVariable Long id) {
         try {
-            Seat bookedSeat = bookingService.bookSeat(seatId, userId);
-            return ResponseEntity.ok(bookedSeat);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of(
-                "error", e.getMessage(),
-                "seatId", seatId,
-                "userId", userId
-            ));
+            Seat seat = bookingService.bookSeat(id);
+            return ResponseEntity.ok(seat);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
         }
-    }
-
-    @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> getStatus() {
-        return ResponseEntity.ok(Map.of(
-            "availableSeats", bookingService.getSeatRepository().countByStatus(Seat.SeatStatus.AVAILABLE),
-            "totalSeats", 100,
-            "rateLimit", "10 requests/minute per IP"
-        ));
     }
 }
