@@ -1,0 +1,123 @@
+version: '3.8'
+
+networks:
+  eventease-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+
+services:
+  # PostgreSQL Database
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: eventease-postgres
+    environment:
+      POSTGRES_DB: eventease
+      POSTGRES_USER: eventease
+      POSTGRES_PASSWORD: eventease123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - eventease-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventease -d eventease"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis-cache:
+    image: redis:7-alpine
+    container_name: eventease-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./backend/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - eventease-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend Service
+  eventease-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: eventease-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-db:5432/eventease
+      SPRING_DATASOURCE_USERNAME: eventease
+      SPRING_DATASOURCE_PASSWORD: eventease123
+      SPRING_REDIS_HOST: redis-cache
+      SPRING_REDIS_PORT: 6379
+      SPRING_CACHE_TYPE: redis
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    networks:
+      - eventease-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Service
+  eventease-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eventease-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - eventease-backend
+    networks:
+      - eventease-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Load Balancer (Optional for production)
+  nginx-lb:
+    image: nginx:alpine
+    container_name: eventease-lb
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - eventease-frontend
+      - eventease-backend
+    networks:
+      - eventease-network
+    restart: unless-stopped
+    profiles:
+      - production
