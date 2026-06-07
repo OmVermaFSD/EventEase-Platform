@@ -1,7 +1,7 @@
 # 🎟️ EventEase - High-Performance Flash Sale Platform
 
 ![EventEase Dashboard](https://github.com/OmVermaFSD/EventEase-Platform/blob/main/screenshot.png?raw=true)
-*(Replace this URL with your actual screenshot link)*
+
 
 > **Live Demo Video:** [Click here to watch the Payment Flow & Red-Seat Locking](YOUR_YOUTUBE_OR_LOOM_LINK_HERE)
 
